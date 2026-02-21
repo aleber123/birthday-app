@@ -83,48 +83,64 @@ class BirthdayCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      DateFormat('d MMM', 'sv').format(birthday.date),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                if (!birthday.hasBirthday)
+                  Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange.shade400),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Födelsedag saknas',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.orange.shade400,
+                        ),
                       ),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
-                      width: 3,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade400,
-                        shape: BoxShape.circle,
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Text(
+                        DateFormat('d MMM', 'sv').format(birthday.date),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${birthday.age} år',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        width: 3,
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade400,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
-                      width: 3,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade400,
-                        shape: BoxShape.circle,
+                      Text(
+                        '${birthday.age} år',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        ),
                       ),
-                    ),
-                    Text(
-                      birthday.zodiacEmoji,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ],
-                ),
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        width: 3,
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade400,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Text(
+                        birthday.zodiacEmoji,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -136,6 +152,16 @@ class BirthdayCard extends StatelessWidget {
   }
 
   Widget _buildCountdown(BuildContext context, int days, bool isToday, Color color, bool isDark) {
+    if (!birthday.hasBirthday) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: isDark ? 0.15 : 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(Icons.edit_calendar_outlined, size: 22, color: Colors.orange.shade400),
+      );
+    }
     if (isToday) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

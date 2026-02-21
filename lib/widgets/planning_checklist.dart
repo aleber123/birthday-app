@@ -249,7 +249,7 @@ class _PlanningItemTile extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  item.title,
+                  _resolveTitle(context, item.title),
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
@@ -264,6 +264,15 @@ class _PlanningItemTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// If the title looks like a localization key (e.g. plan_buy_gift),
+  /// translate it. Otherwise return as-is.
+  String _resolveTitle(BuildContext context, String title) {
+    if (!title.startsWith('plan_')) return title;
+    final translated = AppLocalizations.of(context).get(title);
+    // get() returns the key itself if not found — fall back to raw title
+    return translated == title ? title : translated;
   }
 
   void _toggleItem(BuildContext context) {

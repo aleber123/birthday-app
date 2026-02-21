@@ -12,6 +12,9 @@ import 'package:uuid/uuid.dart';
 import '../models/birthday.dart';
 import '../providers/birthday_provider.dart';
 import '../services/contact_service.dart';
+import '../screens/add_birthday_screen.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/database_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/app_theme.dart';
@@ -208,7 +211,369 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
   // ── Public API for HomeScreen FAB ──────────────────────
   void showAddLinkDialog({String? preselectedParentId}) {
     final provider = context.read<BirthdayProvider>();
-    _showAddLinkDialogInner(provider, preselectedParentId: preselectedParentId);
+    
+    // If no birthdays exist, show choice dialog
+    if (provider.allBirthdays.isEmpty) {
+      _showAddChoiceDialog(provider);
+    } else {
+      _showAddLinkDialogInner(provider, preselectedParentId: preselectedParentId);
+    }
+  }
+
+  // ── Add choice dialog (manual vs import) ──────────────────
+  void _showAddChoiceDialog(BirthdayProvider provider) {
+    final l = AppLocalizations.of(context);
+    
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Lägg till födelsedagar',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 24),
+              
+              // Manual option
+              ListTile(
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.person_add, color: AppTheme.primaryColor),
+                ),
+                title: Text('Lägg till manuellt', style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Fyll i formuläret för att lägga till en ny födelsedag'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddBirthdayScreen()),
+                  );
+                },
+              ),
+              
+              const SizedBox(height: 8),
+              
+              // Import option
+              ListTile(
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentSky.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.contacts, color: AppTheme.accentSky),
+                ),
+                title: Text('Importera från kontakter', style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Importera födelsedagar från din telefonkontakter'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _importFromContacts();
+                },
+              ),
+              
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Import from contacts ────────────────────────────────
+  Future<void> _importFromContacts() async {
+    final contactService = ContactService();
+
+    // Request permission via flutter_contacts (shows iOS system dialog)
+    final granted = await FlutterContacts.requestPermission();
+    if (!granted && mounted) {
+      // Completely denied – offer to open Settings
+      final goToSettings = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Importera kontakter'),
+          content: Text('Appen behöver tillgång till dina kontakter för att importera födelsedagar.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Avbryt'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Öppna inställningar'),
+            ),
+          ],
+        ),
+      );
+      if (goToSettings == true) {
+        await openAppSettings();
+        if (!mounted) return;
+        final nowGranted = await FlutterContacts.requestPermission();
+        if (!nowGranted) return;
+      } else {
+        return;
+      }
+    }
+
+    // Fetch available contacts
+    final allFromContacts = await contactService.getPickableContacts();
+    if (!mounted) return;
+
+    if (allFromContacts.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Inga kontakter hittades')),
+        );
+      }
+      return;
+    }
+
+    // Filter out contacts that already exist (by name)
+    final existingNames = context.read<BirthdayProvider>().allBirthdays
+        .map((b) => b.name.toLowerCase().trim())
+        .toSet();
+    final newContacts = allFromContacts
+        .where((c) => !existingNames.contains(c.displayName.toLowerCase().trim()))
+        .toList();
+
+    if (newContacts.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Alla kontakter är redan importerade')),
+        );
+      }
+      return;
+    }
+
+    // Show contact picker dialog
+    await _showContactPickerDialog(
+      contactService: contactService,
+      contacts: newContacts,
+    );
+  }
+
+  // ── Contact picker dialog (reused from AddBirthdayScreen) ──
+  Future<void> _showContactPickerDialog({
+    required ContactService contactService,
+    required List<PickableContact> contacts,
+  }) async {
+    final selected = <int>{};
+    
+    // Search state
+    String searchQuery = '';
+    List<PickableContact> filteredContacts = List.from(contacts);
+    
+    // Filter contacts based on search query
+    void filterContacts(String query) {
+      searchQuery = query.toLowerCase().trim();
+      if (searchQuery.isEmpty) {
+        filteredContacts = List.from(contacts);
+      } else {
+        filteredContacts = contacts.where((contact) => 
+          contact.displayName.toLowerCase().contains(searchQuery)
+        ).toList();
+      }
+    }
+
+    final result = await showModalBottomSheet<List<PickableContact>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.85,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (ctx, scrollController) {
+                return Column(
+                  children: [
+                    // Handle bar
+                    Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 8),
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    // Title and search
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Column(
+                        children: [
+                          // Title row
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Importera kontakter',
+                                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              if (contacts.isNotEmpty)
+                                TextButton(
+                                  onPressed: () {
+                                    setSheetState(() {
+                                      if (selected.length == filteredContacts.length) {
+                                        selected.clear();
+                                      } else {
+                                        selected.clear();
+                                        for (int i = 0; i < filteredContacts.length; i++) {
+                                          // Find the original index of this filtered contact
+                                          final originalIndex = contacts.indexOf(filteredContacts[i]);
+                                          if (originalIndex != -1) {
+                                            selected.add(originalIndex);
+                                          }
+                                        }
+                                      }
+                                    });
+                                  },
+                                  child: Text(selected.length == filteredContacts.length
+                                      ? 'Avmarkera alla'
+                                      : 'Markera alla'),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Search field
+                          if (contacts.isNotEmpty)
+                            TextField(
+                              onChanged: (value) {
+                                setSheetState(() {
+                                  filterContacts(value);
+                                  // Clear selections when search changes
+                                  selected.clear();
+                                });
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'Sök kontakter...',
+                                prefixIcon: const Icon(Icons.search),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    // Contact list
+                    Expanded(
+                      child: filteredContacts.isEmpty
+                          ? contacts.isEmpty
+                              ? const SizedBox.shrink()
+                              : Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    searchQuery.isEmpty 
+                                        ? 'Inga kontakter att importera'
+                                        : 'Inga kontakter matchar "$searchQuery"',
+                                    style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                          : ListView.builder(
+                              controller: scrollController,
+                              itemCount: filteredContacts.length,
+                              itemBuilder: (ctx, i) {
+                                final c = filteredContacts[i];
+                                final originalIndex = contacts.indexOf(c);
+                                final isSelected = selected.contains(originalIndex);
+                                return CheckboxListTile(
+                                  value: isSelected,
+                                  onChanged: (val) {
+                                    setSheetState(() {
+                                      if (val == true) {
+                                        selected.add(originalIndex);
+                                      } else {
+                                        selected.remove(originalIndex);
+                                      }
+                                    });
+                                  },
+                                  title: Text(c.displayName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  subtitle: c.birthday != null
+                                      ? Text(DateFormat.yMMMd('sv').format(c.birthday!))
+                                      : Text('Ingen födelsedag satt', style: TextStyle(color: Colors.grey.shade400)),
+                                  secondary: CircleAvatar(
+                                    backgroundColor: AppTheme.getAvatarColor(null, c.displayName),
+                                    child: Text(
+                                      c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : '?',
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    // Import button
+                    if (contacts.isNotEmpty)
+                      SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: selected.isEmpty
+                                  ? null
+                                  : () {
+                                      final chosen = selected.map((i) => contacts[i]).toList();
+                                      Navigator.pop(ctx, chosen);
+                                    },
+                              icon: const Icon(Icons.download_rounded),
+                              label: Text('Importera kontakter (${selected.length})'),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      final birthdays = <Birthday>[];
+      for (final c in result) {
+        birthdays.add(await contactService.contactToBirthday(c));
+      }
+      await context.read<BirthdayProvider>().importBirthdays(birthdays);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${birthdays.length} kontakter importerade!')),
+        );
+      }
+    }
   }
 
   bool get hasProfile => _ownerName != null;
@@ -463,14 +828,19 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
   }
 
   // Collect parent-child edges for line drawing
-  List<(Offset, Offset, _ChildOwner)> _collectEdges(_LayoutNode root, Map<String, Offset> dragOffsets) {
-    final edges = <(Offset, Offset, _ChildOwner)>[];
+  List<(Offset, Offset, _ChildOwner, RelationType?)> _collectEdges(
+    _LayoutNode root,
+    Map<String, Offset> dragOffsets,
+    Map<String, Birthday> bdayMap,
+  ) {
+    final edges = <(Offset, Offset, _ChildOwner, RelationType?)>[];
     final rootDrag = dragOffsets[root.id] ?? Offset.zero;
 
     for (int i = 0; i < root.children.length; i++) {
       final child = root.children[i];
       final childDrag = dragOffsets[child.id] ?? Offset.zero;
       final owner = i < root.childOwnership.length ? root.childOwnership[i] : _ChildOwner.shared;
+      final childRelType = bdayMap[child.id]?.relationType;
 
       // Determine parent anchor point based on ownership
       double parentAnchorX;
@@ -491,8 +861,8 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
 
       final parentBottom = Offset(parentAnchorX + rootDrag.dx, root.y + _LayoutNode.nodeH + rootDrag.dy);
       final childTop = Offset(child.x + childDrag.dx, child.y + childDrag.dy);
-      edges.add((parentBottom, childTop, owner));
-      edges.addAll(_collectEdges(child, dragOffsets));
+      edges.add((parentBottom, childTop, owner, childRelType));
+      edges.addAll(_collectEdges(child, dragOffsets, bdayMap));
     }
     return edges;
   }
@@ -554,7 +924,7 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
     final offsetX = -minX + padding;
     final offsetY = -minY + padding;
 
-    final edges = _collectEdges(root, _dragOffsets);
+    final edges = _collectEdges(root, _dragOffsets, bdayMap);
 
     final screenW = MediaQuery.of(context).size.width;
     final screenH = MediaQuery.of(context).size.height;
@@ -669,8 +1039,11 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
 
     if (node.partnerId != null) {
       final partnerBday = bdayMap[node.partnerId!];
+      // Use priority-aware label for partner too (e.g. show "Pappa" instead of "Man")
+      final partnerLabel = _getLabelForId(node.partnerId!);
+      final resolvedPartnerLabel = partnerLabel.isNotEmpty ? partnerLabel : (node.partnerLabel ?? '');
       return _buildPersonPairWidget(
-        bday, partnerBday, node.partnerLabel ?? '', label, provider,
+        bday, partnerBday, resolvedPartnerLabel, label, provider,
       );
     }
 
@@ -1085,9 +1458,38 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
     );
   }
 
+  // Labels that should always take priority over partner/spouse labels
+  static const _priorityLabels = {
+    'Mamma', 'Pappa', 'Mor', 'Far', 'Mormor', 'Morfar', 'Farmor', 'Farfar',
+    'Syster', 'Bror', 'Son', 'Dotter', 'Barnbarn',
+    'Faster', 'Moster', 'Farbror', 'Morbror',
+    'Svärmor', 'Svärfar', 'Svärdotter', 'Svärson',
+    'Kusin', 'Niece', 'Nephew', 'Halvbror', 'Halvsyster',
+    'Styvmamma', 'Styvpappa', 'Styvbror', 'Styvsyster', 'Styvbarn',
+    // English variants
+    'Mom', 'Dad', 'Mother', 'Father', 'Grandmother', 'Grandfather',
+    'Sister', 'Brother',
+  };
+
   String _getLabelForId(String id) {
-    final link = _links.where((l) => l.childId == id && !l.isPartner).firstOrNull;
-    return link?.label ?? '';
+    // Collect ALL non-partner links where this person is the child
+    final childLinks = _links.where((l) => l.childId == id && !l.isPartner).toList();
+    // Also collect partner links where this person is the child (i.e. the partner side)
+    final allLinks = _links.where((l) => l.childId == id || l.parentId == id).toList();
+
+    // Build full label list: child-links first, then any other links
+    final allLabels = [
+      ...childLinks.map((l) => l.label),
+      ...allLinks.where((l) => !childLinks.contains(l)).map((l) => l.label),
+    ];
+
+    if (allLabels.isEmpty) return '';
+
+    // Prefer priority (family) labels over partner/spouse labels
+    final priority = allLabels.where((label) => _priorityLabels.contains(label)).toList();
+    if (priority.isNotEmpty) return priority.first;
+
+    return allLabels.first;
   }
 
   Color _getRelColor(RelationType type) {
@@ -1322,6 +1724,7 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
     // Multi-select: childId -> label
     final selectedChildren = <String, String>{};
     final labelController = TextEditingController();
+    final targetSearchController = TextEditingController();
     String? activeChildId; // which child we're currently setting label for
 
     final l = AppLocalizations.of(context);
@@ -1346,12 +1749,12 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
         return StatefulBuilder(
           builder: (ctx, setModalState) {
             final parentOptions = <_ParentOption>[
-              _ParentOption(id: _ownerId, name: _ownerName ?? l.me, isOwner: true),
+              _ParentOption(id: _ownerId, name: _ownerName ?? l.me, isOwner: true, imagePath: _ownerImage),
             ];
             for (final id in parentsInTree) {
               if (id == _ownerId) continue;
               final b = allBirthdays.where((b) => b.id == id).firstOrNull;
-              if (b != null) parentOptions.add(_ParentOption(id: b.id, name: b.name));
+              if (b != null) parentOptions.add(_ParentOption(id: b.id, name: b.name, imagePath: b.imagePath));
             }
 
             final existingChildIds = _links
@@ -1361,11 +1764,11 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
             // Include owner as a possible target (when parent is not owner)
             final targetOptions = <_ParentOption>[];
             if (selectedParentId != _ownerId && !existingChildIds.contains(_ownerId)) {
-              targetOptions.add(_ParentOption(id: _ownerId, name: _ownerName ?? l.me, isOwner: true));
+              targetOptions.add(_ParentOption(id: _ownerId, name: _ownerName ?? l.me, isOwner: true, imagePath: _ownerImage));
             }
             for (final b in allBirthdays) {
               if (b.id != selectedParentId && !existingChildIds.contains(b.id)) {
-                targetOptions.add(_ParentOption(id: b.id, name: b.name));
+                targetOptions.add(_ParentOption(id: b.id, name: b.name, imagePath: b.imagePath));
               }
             }
 
@@ -1416,14 +1819,18 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  CircleAvatar(
-                                    radius: 18,
-                                    backgroundColor: p.isOwner ? AppTheme.primaryColor : AppTheme.getAvatarColor(null, p.name),
-                                    child: Text(
-                                      p.name.isNotEmpty ? p.name[0].toUpperCase() : '?',
-                                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
+                                  Builder(builder: (_) {
+                                    final hasImg = !kIsWeb && p.imagePath != null && p.imagePath!.isNotEmpty && File(p.imagePath!).existsSync();
+                                    return CircleAvatar(
+                                      radius: 18,
+                                      backgroundColor: p.isOwner ? AppTheme.primaryColor : AppTheme.getAvatarColor(null, p.name),
+                                      backgroundImage: hasImg ? FileImage(File(p.imagePath!)) : null,
+                                      child: hasImg ? null : Text(
+                                        p.name.isNotEmpty ? p.name[0].toUpperCase() : '?',
+                                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                      ),
+                                    );
+                                  }),
                                   const SizedBox(height: 4),
                                   Text(
                                     p.isOwner ? l.me : p.name.split(' ').first,
@@ -1457,23 +1864,65 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     if (targetOptions.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(l.allAlreadyConnected, style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
                       )
-                    else
-                      SizedBox(
-                        height: 80,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: targetOptions.length,
-                          itemBuilder: (_, i) {
-                            final t = targetOptions[i];
+                    else ...[
+                      // Search field
+                      TextField(
+                        controller: targetSearchController,
+                        onChanged: (_) => setModalState(() {}),
+                        decoration: InputDecoration(
+                          hintText: 'Sök person...',
+                          prefixIcon: const Icon(Icons.search, size: 20),
+                          isDense: true,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Builder(builder: (_) {
+                        // Compute which first names are duplicated (for disambiguation)
+                        final firstNames = targetOptions.map((t) => t.name.split(' ').first.toLowerCase()).toList();
+                        final duplicateFirstNames = <String>{};
+                        for (int i = 0; i < firstNames.length; i++) {
+                          for (int j = i + 1; j < firstNames.length; j++) {
+                            if (firstNames[i] == firstNames[j]) {
+                              duplicateFirstNames.add(firstNames[i]);
+                            }
+                          }
+                        }
+
+                        // Filter by search
+                        final query = targetSearchController.text.toLowerCase().trim();
+                        final filtered = query.isEmpty
+                            ? targetOptions
+                            : targetOptions.where((t) => t.name.toLowerCase().contains(query)).toList();
+
+                        if (filtered.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text('Ingen person matchar "$query"', style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+                          );
+                        }
+
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: filtered.map((t) {
                             final isSelected = selectedChildren.containsKey(t.id);
                             final isActive = activeChildId == t.id;
                             final avatarColor = t.isOwner ? AppTheme.primaryColor : AppTheme.getAvatarColor(null, t.name);
+                            final firstName = t.isOwner ? l.me : t.name.split(' ').first;
+                            // Add last name initial if first name is duplicated
+                            final parts = t.name.split(' ');
+                            final displayName = (!t.isOwner && duplicateFirstNames.contains(firstName.toLowerCase()) && parts.length > 1)
+                                ? '$firstName ${parts.last[0].toUpperCase()}.'
+                                : firstName;
+
                             return GestureDetector(
                               onTap: () => setModalState(() {
                                 if (isSelected) {
@@ -1490,7 +1939,6 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
                               }),
                               child: Container(
                                 width: 70,
-                                margin: const EdgeInsets.only(right: 10),
                                 padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
                                   color: isActive
@@ -1513,14 +1961,18 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
                                   children: [
                                     Stack(
                                       children: [
-                                        CircleAvatar(
-                                          radius: 18,
-                                          backgroundColor: avatarColor,
-                                          child: Text(
-                                            t.name.isNotEmpty ? t.name[0].toUpperCase() : '?',
-                                            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
+                                        Builder(builder: (_) {
+                                          final hasImg = !kIsWeb && t.imagePath != null && t.imagePath!.isNotEmpty && File(t.imagePath!).existsSync();
+                                          return CircleAvatar(
+                                            radius: 18,
+                                            backgroundColor: avatarColor,
+                                            backgroundImage: hasImg ? FileImage(File(t.imagePath!)) : null,
+                                            child: hasImg ? null : Text(
+                                              t.name.isNotEmpty ? t.name[0].toUpperCase() : '?',
+                                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                            ),
+                                          );
+                                        }),
                                         if (isSelected)
                                           Positioned(
                                             right: 0, bottom: 0,
@@ -1541,18 +1993,20 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      t.isOwner ? l.me : t.name.split(' ').first,
+                                      displayName,
                                       style: TextStyle(fontSize: 10, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500),
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
+                                      maxLines: 1,
                                     ),
                                   ],
                                 ),
                               ),
                             );
-                          },
-                        ),
-                      ),
+                          }).toList(),
+                        );
+                      }),
+                    ],
 
                     // Show selected children chips
                     if (selectedChildren.isNotEmpty) ...[
@@ -2065,27 +2519,33 @@ class RelationTreeScreenState extends State<RelationTreeScreen> {
 
 // ── Custom painter for tree connection lines ─────────────
 class _TreeLinePainter extends CustomPainter {
-  final List<(Offset, Offset, _ChildOwner)> edges;
+  final List<(Offset, Offset, _ChildOwner, RelationType?)> edges;
   final Offset offset;
 
   _TreeLinePainter({required this.edges, required this.offset});
 
-  static const _defaultColor = Color(0xFFCBD5E1);
-  static const _leftColor = Color(0xFF64B5F6);   // blue – person's own
-  static const _rightColor = Color(0xFFF48FB1);   // pink – partner's own
+  // Colors per relation type
+  static const _familyColor  = Color(0xFFEC4899); // pink  – close family
+  static const _friendColor  = Color(0xFF6366F1); // indigo – friend
+  static const _colleagueColor = Color(0xFF34D399); // mint – colleague
+  static const _defaultColor = Color(0xFFCBD5E1); // grey  – unknown
+  // Partner-side tints (slightly lighter)
+  static const _familyRight  = Color(0xFFF9A8D4);
+  static const _friendRight  = Color(0xFFA5B4FC);
+  static const _colleagueRight = Color(0xFF6EE7B7);
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final (from, to, owner) in edges) {
+    for (final (from, to, owner, relType) in edges) {
       final Color lineColor;
-      switch (owner) {
-        case _ChildOwner.left:
-          lineColor = _leftColor;
-        case _ChildOwner.right:
-          lineColor = _rightColor;
-        case _ChildOwner.shared:
-          lineColor = _defaultColor;
-      }
+      // Base color on relation type, tinted lighter for partner-side children
+      final Color baseColor = switch (relType) {
+        RelationType.closeFamily => owner == _ChildOwner.right ? _familyRight : _familyColor,
+        RelationType.friend      => owner == _ChildOwner.right ? _friendRight : _friendColor,
+        RelationType.colleague   => owner == _ChildOwner.right ? _colleagueRight : _colleagueColor,
+        null                     => _defaultColor,
+      };
+      lineColor = baseColor;
 
       final paint = Paint()
         ..color = lineColor
@@ -2116,5 +2576,6 @@ class _ParentOption {
   final String id;
   final String name;
   final bool isOwner;
-  _ParentOption({required this.id, required this.name, this.isOwner = false});
+  final String? imagePath;
+  _ParentOption({required this.id, required this.name, this.isOwner = false, this.imagePath});
 }

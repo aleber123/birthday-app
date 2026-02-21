@@ -61,6 +61,14 @@
 	</array>
 	<key>NSContactsUsageDescription</key>
 	<string>Birthday Reminder uses your contacts to import names and birthdays so you never miss a celebration.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Vi använder din data för att visa relevanta annonser och förbättra din upplevelse av appen.</string>
+	<key>FacebookAppID</key>
+	<string>REPLACE_WITH_YOUR_FACEBOOK_APP_ID</string>
+	<key>FacebookClientToken</key>
+	<string>REPLACE_WITH_YOUR_FACEBOOK_CLIENT_TOKEN</string>
+	<key>FacebookDisplayName</key>
+	<string>Födelsedagar</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

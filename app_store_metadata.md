@@ -35,6 +35,9 @@ Uppgradera för obegränsat antal födelsedagar, fler påminnelser, export till 
 
 All data sparas lokalt på din enhet – vi samlar aldrig in personuppgifter.
 
+Integritetspolicy: https://aleber123.github.io/birthday-app/privacy.html
+Användarvillkor (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+
 ## Description (English)
 Never forget a birthday again! Birthday Reminder helps you keep track of all important dates with smart reminders and personalized gift suggestions.
 
@@ -53,6 +56,9 @@ Get smart gift suggestions based on the person's age – from baby toys to premi
 Upgrade for unlimited birthdays, more reminders, CSV export, extra themes and ad-free experience.
 
 All data is stored locally on your device – we never collect personal information.
+
+Privacy Policy: https://aleber123.github.io/birthday-app/privacy.html
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 
 ## Promotional Text (170 tecken)
 🎂 Ny version! Swish-integration, presenttips från Amazon & Coolstuff, och stöd för alla nordiska språk.

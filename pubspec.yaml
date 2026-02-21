@@ -1,7 +1,7 @@
 name: birthday_reminder
 description: "Födelsedags-påminnelseapp – glöm aldrig en födelsedag igen!"
 publish_to: 'none'
-version: 1.0.0+24
+version: 1.0.1+25
 
 environment:
   sdk: ^3.10.8
@@ -53,6 +53,12 @@ dependencies:
 
   # In-App Purchases
   in_app_purchase: ^3.2.0
+
+  # Facebook Conversions API / App Events
+  facebook_app_events: ^0.16.0
+
+  # iOS App Tracking Transparency (ATT)
+  app_tracking_transparency: ^2.0.6
   graphview: ^1.5.1
   file_picker: ^10.3.10
 

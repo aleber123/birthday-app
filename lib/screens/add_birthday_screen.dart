@@ -13,6 +13,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/contact_service.dart';
+import '../services/facebook_analytics_service.dart';
 import '../services/premium_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/app_theme.dart';
@@ -36,6 +37,7 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
   final _addressController = TextEditingController();
   final _notesController = TextEditingController();
   DateTime _selectedDate = DateTime(2000, 1, 1);
+  bool _dateHasBeenSet = false;
   List<int> _selectedReminders = [0, 1, 7];
   RelationType _selectedRelationType = RelationType.friend;
   String? _imagePath;
@@ -53,7 +55,8 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
       _emailController.text = b.email ?? '';
       _addressController.text = b.address ?? '';
       _notesController.text = b.notes ?? '';
-      _selectedDate = b.date;
+      _selectedDate = b.hasBirthday ? b.date : DateTime(2000, 1, 1);
+      _dateHasBeenSet = b.hasBirthday;
       _selectedReminders = List.from(b.reminderDaysBefore);
       _selectedRelationType = b.relationType;
       _imagePath = b.imagePath;
@@ -310,17 +313,34 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
   }
 
   Widget _buildDatePicker() {
+    final showWarning = _isEditing && !_dateHasBeenSet;
     return InkWell(
       onTap: _pickDate,
       borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: AppLocalizations.of(context).birthdate,
-          prefixIcon: const Icon(Icons.calendar_today_outlined),
+          prefixIcon: Icon(
+            Icons.calendar_today_outlined,
+            color: showWarning ? Colors.orange.shade400 : null,
+          ),
+          enabledBorder: showWarning
+              ? OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.orange.shade400, width: 1.5),
+                )
+              : null,
+          helperText: showWarning ? 'Födelsedag saknas – lägg till ett datum' : null,
+          helperStyle: showWarning ? TextStyle(color: Colors.orange.shade600) : null,
         ),
         child: Text(
-          DateFormat.yMMMMd(AppLocalizations.of(context).locale.languageCode).format(_selectedDate),
-          style: const TextStyle(fontSize: 16),
+          showWarning
+              ? 'Välj datum...'
+              : DateFormat.yMMMMd(AppLocalizations.of(context).locale.languageCode).format(_selectedDate),
+          style: TextStyle(
+            fontSize: 16,
+            color: showWarning ? Colors.orange.shade400 : null,
+          ),
         ),
       ),
     );
@@ -568,7 +588,10 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
       cancelText: AppLocalizations.of(context).cancel,
     );
     if (picked != null) {
-      setState(() => _selectedDate = picked);
+      setState(() {
+        _selectedDate = picked;
+        _dateHasBeenSet = true;
+      });
     }
   }
 
@@ -580,7 +603,7 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
     final birthday = Birthday(
       id: _isEditing ? widget.editBirthday!.id : const Uuid().v4(),
       name: _nameController.text.trim(),
-      date: _selectedDate,
+      date: _dateHasBeenSet ? _selectedDate : Birthday.noBirthdaySentinel,
       phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
       email: _emailController.text.trim().isEmpty ? null : _emailController.text.trim(),
       address: _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
@@ -599,6 +622,10 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
       await provider.updateBirthday(birthday);
     } else {
       await provider.addBirthday(birthday);
+      final isFirst = provider.allBirthdays.length == 1;
+      if (isFirst) {
+        FacebookAnalyticsService.instance.logCompleteRegistration();
+      }
     }
 
     if (mounted) Navigator.pop(context);
@@ -708,9 +735,21 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
   }) async {
     final l10n = AppLocalizations.of(context);
     final selected = <int>{};
-    // Pre-select all by default
-    for (int i = 0; i < contacts.length; i++) {
-      selected.add(i);
+    
+    // Search state
+    String searchQuery = '';
+    List<PickableContact> filteredContacts = List.from(contacts);
+    
+    // Filter contacts based on search query
+    void filterContacts(String query) {
+      searchQuery = query.toLowerCase().trim();
+      if (searchQuery.isEmpty) {
+        filteredContacts = List.from(contacts);
+      } else {
+        filteredContacts = contacts.where((contact) => 
+          contact.displayName.toLowerCase().contains(searchQuery)
+        ).toList();
+      }
     }
 
     final result = await showModalBottomSheet<List<PickableContact>>(
@@ -741,34 +780,63 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    // Title
+                    // Title and search
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(
+                      child: Column(
                         children: [
-                          Expanded(
-                            child: Text(
-                              l10n.importContacts,
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                            ),
+                          // Title row
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  l10n.importContacts,
+                                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              if (contacts.isNotEmpty)
+                                TextButton(
+                                  onPressed: () {
+                                    setSheetState(() {
+                                      if (selected.length == filteredContacts.length) {
+                                        selected.clear();
+                                      } else {
+                                        selected.clear();
+                                        for (int i = 0; i < filteredContacts.length; i++) {
+                                          // Find the original index of this filtered contact
+                                          final originalIndex = contacts.indexOf(filteredContacts[i]);
+                                          if (originalIndex != -1) {
+                                            selected.add(originalIndex);
+                                          }
+                                        }
+                                      }
+                                    });
+                                  },
+                                  child: Text(selected.length == filteredContacts.length
+                                      ? l10n.get('deselect_all')
+                                      : l10n.get('select_all')),
+                                ),
+                            ],
                           ),
+                          const SizedBox(height: 8),
+                          // Search field
                           if (contacts.isNotEmpty)
-                            TextButton(
-                              onPressed: () {
+                            TextField(
+                              onChanged: (value) {
                                 setSheetState(() {
-                                  if (selected.length == contacts.length) {
-                                    selected.clear();
-                                  } else {
-                                    selected.clear();
-                                    for (int i = 0; i < contacts.length; i++) {
-                                      selected.add(i);
-                                    }
-                                  }
+                                  filterContacts(value);
+                                  // Clear selections when search changes
+                                  selected.clear();
                                 });
                               },
-                              child: Text(selected.length == contacts.length
-                                  ? l10n.get('deselect_all')
-                                  : l10n.get('select_all')),
+                              decoration: InputDecoration(
+                                hintText: 'Sök kontakter...',
+                                prefixIcon: const Icon(Icons.search),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              ),
                             ),
                         ],
                       ),
@@ -842,34 +910,69 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
                       ),
                     // Contact list
                     Expanded(
-                      child: contacts.isEmpty
-                          ? const SizedBox.shrink()
+                      child: filteredContacts.isEmpty
+                          ? contacts.isEmpty
+                              ? const SizedBox.shrink()
+                              : Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Text(
+                                    searchQuery.isEmpty 
+                                        ? 'Inga kontakter att importera'
+                                        : 'Inga kontakter matchar "$searchQuery"',
+                                    style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
                           : ListView.builder(
                               controller: scrollController,
-                              itemCount: contacts.length,
+                              itemCount: filteredContacts.length,
                               itemBuilder: (ctx, i) {
-                                final c = contacts[i];
-                                final isSelected = selected.contains(i);
+                                final c = filteredContacts[i];
+                                final originalIndex = contacts.indexOf(c);
+                                final isSelected = selected.contains(originalIndex);
+                                final hasBirthday = c.birthday != null;
                                 return CheckboxListTile(
                                   value: isSelected,
-                                  onChanged: (val) {
-                                    setSheetState(() {
-                                      if (val == true) {
-                                        selected.add(i);
-                                      } else {
-                                        selected.remove(i);
-                                      }
-                                    });
-                                  },
-                                  title: Text(c.displayName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  subtitle: c.birthday != null
+                                  onChanged: hasBirthday
+                                      ? (val) {
+                                          setSheetState(() {
+                                            if (val == true) {
+                                              selected.add(originalIndex);
+                                            } else {
+                                              selected.remove(originalIndex);
+                                            }
+                                          });
+                                        }
+                                      : null,
+                                  title: Text(
+                                    c.displayName,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: hasBirthday ? null : Colors.grey.shade400,
+                                    ),
+                                  ),
+                                  subtitle: hasBirthday
                                       ? Text(DateFormat.yMMMd(l10n.locale.languageCode).format(c.birthday!))
-                                      : Text(l10n.get('no_birthday_set'), style: TextStyle(color: Colors.grey.shade400)),
+                                      : Row(
+                                          children: [
+                                            Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange.shade400),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              l10n.get('no_birthday_set'),
+                                              style: TextStyle(color: Colors.orange.shade400),
+                                            ),
+                                          ],
+                                        ),
                                   secondary: CircleAvatar(
-                                    backgroundColor: AppTheme.getAvatarColor(null, c.displayName),
+                                    backgroundColor: hasBirthday
+                                        ? AppTheme.getAvatarColor(null, c.displayName)
+                                        : Colors.grey.shade300,
                                     child: Text(
                                       c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : '?',
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        color: hasBirthday ? Colors.white : Colors.grey.shade500,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 );
@@ -911,6 +1014,7 @@ class _AddBirthdayScreenState extends State<AddBirthdayScreen> {
         birthdays.add(await contactService.contactToBirthday(c));
       }
       await context.read<BirthdayProvider>().importBirthdays(birthdays);
+      FacebookAnalyticsService.instance.logImportContacts(count: birthdays.length);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${birthdays.length} kontakter importerade!')),

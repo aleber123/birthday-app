@@ -1,7 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/premium_service.dart';
+import '../services/facebook_analytics_service.dart';
 import '../utils/app_theme.dart';
+import '../utils/constants.dart';
 import '../l10n/app_localizations.dart';
 
 class PaywallScreen extends StatefulWidget {
@@ -19,6 +22,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
   void initState() {
     super.initState();
     _premium.addListener(_onPremiumChanged);
+    FacebookAnalyticsService.instance.logInitiateCheckout(planName: 'paywall_view');
   }
 
   @override
@@ -31,8 +35,14 @@ class _PaywallScreenState extends State<PaywallScreen> {
     if (!mounted) return;
     setState(() {});
 
-    // If purchase succeeded, show success and pop
+    // If purchase succeeded, fire FB Purchase event and show success
     if (_premium.isPremium) {
+      final price = _selectedPlan == PremiumPlan.yearly ? 49.0 : 9.0;
+      FacebookAnalyticsService.instance.logPurchase(
+        amount: price,
+        currency: 'SEK',
+        parameters: {'plan': _selectedPlan == PremiumPlan.yearly ? 'yearly' : 'monthly'},
+      );
       final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -218,6 +228,53 @@ class _PaywallScreenState extends State<PaywallScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
+                      ),
+
+                      // Privacy Policy & Terms of Use links (required by App Store Guideline 3.1.2)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          GestureDetector(
+                            onTap: () => launchUrl(
+                              Uri.parse(AppConstants.termsOfUseUrl),
+                              mode: LaunchMode.externalApplication,
+                            ),
+                            child: Text(
+                              'Användarvillkor (EULA)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.white54 : Colors.grey.shade500,
+                                decoration: TextDecoration.underline,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              '·',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.white54 : Colors.grey.shade500,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => launchUrl(
+                              Uri.parse(AppConstants.privacyPolicyUrl),
+                              mode: LaunchMode.externalApplication,
+                            ),
+                            child: Text(
+                              'Integritetspolicy',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.white54 : Colors.grey.shade500,
+                                decoration: TextDecoration.underline,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -440,6 +497,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
           onPressed: (isLoading || !canPurchase)
               ? null
               : () {
+                  FacebookAnalyticsService.instance.logInitiateCheckout(
+                    planName: _selectedPlan == PremiumPlan.yearly ? 'yearly' : 'monthly',
+                  );
                   premium.purchase(_selectedPlan);
                   // Result comes via _onPremiumChanged listener
                 },

@@ -8,6 +8,7 @@ import 'services/notification_service.dart';
 import 'services/ad_service.dart';
 import 'services/premium_service.dart';
 import 'services/theme_service.dart';
+import 'services/facebook_analytics_service.dart';
 import 'l10n/app_localizations.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
@@ -101,8 +102,10 @@ class _SplashWrapperState extends State<_SplashWrapper> {
     if (_showHome) return const HomeScreen();
 
     return SplashScreen(
-      onComplete: () {
-        if (mounted) setState(() => _showHome = true);
+      onComplete: () async {
+        if (!mounted) return;
+        setState(() => _showHome = true);
+        await AttPermissionHandler.requestAndInit();
       },
     );
   }

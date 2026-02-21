@@ -1,87 +1,309 @@
 #!/usr/bin/env python3
 """
-Generate App Store screenshots for Birthday Reminder.
-Creates promotional screenshots with device frames and marketing text.
+Generate App Store screenshots for Födelsedagar (Birthday Reminder).
+ASO-optimized: AIDA narrative, benefit-driven captions, festive design.
 
 App Store required sizes:
-- iPhone 6.7" (1290 x 2796) - iPhone 15 Pro Max
-- iPhone 6.5" (1284 x 2778) - iPhone 14 Plus  
-- iPhone 5.5" (1242 x 2208) - iPhone 8 Plus
-- iPad 12.9" (2048 x 2732) - iPad Pro
+- iPhone 6.7" (1290 x 2796) - iPhone 16 Pro Max  [REQUIRED]
+- iPhone 6.5" (1284 x 2778) - iPhone 14 Plus
+- iPad 13"   (2064 x 2752)                        [REQUIRED]
 """
 
 from PIL import Image, ImageDraw, ImageFont
 import os
 import math
+import random
 
-# App's color palette
-VIOLET = (124, 92, 252)
-SKY = (103, 195, 243)
-MINT = (110, 231, 183)
-CORAL = (255, 107, 138)
-PEACH = (255, 176, 136)
-WHITE = (255, 255, 255)
-DARK = (26, 26, 46)
+# ── Color palette ──────────────────────────────────────────
+VIOLET  = (124,  92, 252)
+VIOLET2 = ( 99,  69, 228)
+SKY     = (103, 195, 243)
+MINT    = (110, 231, 183)
+MINT2   = ( 52, 211, 153)
+CORAL   = (255, 107, 138)
+PEACH   = (255, 176, 136)
+GOLD    = (251, 191,  36)
+WHITE   = (255, 255, 255)
+DARK    = ( 26,  26,  46)
+GREY    = (107, 114, 128)
+LIGHT_BG= (248, 247, 252)
 
 def lerp_color(c1, c2, t):
     t = max(0, min(1, t))
     return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
 
 def draw_gradient_bg(draw, w, h, c1, c2, c3=None):
-    """Draw a vertical gradient background."""
     for y in range(h):
         t = y / h
         if c3:
-            if t < 0.5:
-                color = lerp_color(c1, c2, t * 2)
-            else:
-                color = lerp_color(c2, c3, (t - 0.5) * 2)
+            color = lerp_color(c1, c2, t * 2) if t < 0.5 else lerp_color(c2, c3, (t - 0.5) * 2)
         else:
             color = lerp_color(c1, c2, t)
         draw.line([(0, y), (w, y)], fill=color)
 
-def draw_phone_frame(img, x, y, phone_w, phone_h, screen_content_func):
-    """Draw a simplified iPhone frame with screen content."""
-    draw = ImageDraw.Draw(img)
-    
-    # Phone bezel
+def get_fonts(h):
+    sizes = [int(h * s) for s in (0.055, 0.038, 0.024, 0.018, 0.013)]
+    fonts = []
+    for s in sizes:
+        try:
+            fonts.append(ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", s))
+        except:
+            fonts.append(ImageFont.load_default())
+    return fonts
+
+def centered_text(draw, text, y, total_w, font, color):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    draw.text(((total_w - tw) // 2, y), text, fill=color, font=font)
+
+def draw_confetti(draw, w, h, seed=42):
+    rng = random.Random(seed)
+    colors = [CORAL, VIOLET, GOLD, MINT2, SKY, PEACH]
+    for _ in range(90):
+        x = rng.randint(0, w)
+        y = rng.randint(0, int(h * 0.20))
+        r = rng.randint(4, 14)
+        c = rng.choice(colors)
+        if rng.random() > 0.5:
+            draw.ellipse([x - r, y - r, x + r, y + r], fill=c)
+        else:
+            draw.rectangle([x, y, x + r * 2, y + r], fill=c)
+    for _ in range(50):
+        x = rng.randint(0, w)
+        y = rng.randint(int(h * 0.86), h)
+        r = rng.randint(3, 10)
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=rng.choice(colors))
+
+def draw_phone_frame(img, x, y, phone_w, phone_h, screen_func):
+    draw = ImageDraw.Draw(img, 'RGBA')
     bezel = int(phone_w * 0.04)
-    corner_r = int(phone_w * 0.12)
-    
-    # Phone body (dark)
-    draw.rounded_rectangle(
-        [x, y, x + phone_w, y + phone_h],
-        radius=corner_r,
-        fill=(20, 20, 30)
-    )
-    
-    # Screen area
-    sx = x + bezel
-    sy = y + bezel
-    sw = phone_w - bezel * 2
-    sh = phone_h - bezel * 2
+    corner_r = int(phone_w * 0.13)
+    draw.rounded_rectangle([x, y, x + phone_w, y + phone_h], radius=corner_r, fill=(18, 18, 28))
+    sx, sy = x + bezel, y + bezel
+    sw, sh = phone_w - bezel * 2, phone_h - bezel * 2
     screen_r = int(corner_r * 0.85)
-    
-    # Screen background
-    draw.rounded_rectangle(
-        [sx, sy, sx + sw, sy + sh],
-        radius=screen_r,
-        fill=(245, 243, 255)
-    )
-    
-    # Draw screen content
-    screen_content_func(draw, sx, sy, sw, sh)
-    
-    # Dynamic island
-    island_w = int(phone_w * 0.28)
-    island_h = int(phone_h * 0.018)
-    island_x = x + (phone_w - island_w) // 2
-    island_y = y + bezel + int(phone_h * 0.012)
-    draw.rounded_rectangle(
-        [island_x, island_y, island_x + island_w, island_y + island_h],
-        radius=island_h // 2,
-        fill=(20, 20, 30)
-    )
+    draw.rounded_rectangle([sx, sy, sx + sw, sy + sh], radius=screen_r, fill=LIGHT_BG)
+    screen_func(draw, sx, sy, sw, sh)
+    iw = int(phone_w * 0.28)
+    ih = int(phone_h * 0.018)
+    ix = x + (phone_w - iw) // 2
+    iy = y + bezel + int(phone_h * 0.01)
+    draw.rounded_rectangle([ix, iy, ix + iw, iy + ih], radius=ih // 2, fill=(18, 18, 28))
+
+# ── 6 ASO-optimized screen content functions ───────────────
+
+def screen_home(draw, sx, sy, sw, sh):
+    """SS1 – Home list (Attention: core value)."""
+    _, f_title, f_body, f_small, f_tiny = get_fonts(sh)
+    bar_h = int(sh * 0.07)
+    draw.text((sx+int(sw*0.06), sy+bar_h), "Fodelsedagar", fill=DARK, font=f_title)
+    entries = [
+        ("Mamma",           "Idag!",   "Fyller 60 ar",  CORAL,  True),
+        ("Emma Andersson",  "7 dagar",  "Fyller 30 ar",  VIOLET, False),
+        ("Oscar Lindqvist", "14 dagar", "Fyller 25 ar",  SKY,    False),
+        ("Sofia Bergstrom", "23 dagar", "Fyller 28 ar",  MINT2,  False),
+        ("Alexander Ek",    "34 dagar", "Fyller 35 ar",  PEACH,  False),
+    ]
+    cm = int(sw * 0.05); cw = sw - cm * 2; ch = int(sh * 0.1)
+    gap = int(sh * 0.015); cr = int(sw * 0.05)
+    card_y = sy + bar_h + int(sh * 0.08)
+    for i, (name, days, age, color, highlight) in enumerate(entries):
+        cy = card_y + i * (ch + gap)
+        if cy + ch > sy + sh - int(sh * 0.1): break
+        bg = (*color, 22) if highlight else (255, 255, 255, 220)
+        draw.rounded_rectangle([sx+cm, cy, sx+cm+cw, cy+ch], radius=cr, fill=bg)
+        if highlight:
+            draw.rounded_rectangle([sx+cm, cy, sx+cm+cw, cy+ch], radius=cr, outline=(*color, 180), width=3)
+        av_r = int(ch * 0.33); av_cx = sx+cm+int(cw*0.09); av_cy = cy+ch//2
+        draw.ellipse([av_cx-av_r, av_cy-av_r, av_cx+av_r, av_cy+av_r], fill=color)
+        draw.text((av_cx-int(av_r*0.45), av_cy-int(av_r*0.55)), name[0], fill=WHITE, font=f_small)
+        tx = av_cx + av_r + int(cw*0.04)
+        draw.text((tx, cy+int(ch*0.15)), name, fill=DARK, font=f_body)
+        draw.text((tx, cy+int(ch*0.55)), age, fill=GREY, font=f_tiny)
+        bw = int(cw*0.22); bh = int(ch*0.42)
+        bx = sx+cm+cw-bw-int(cw*0.04); by_ = cy+(ch-bh)//2
+        draw.rounded_rectangle([bx, by_, bx+bw, by_+bh], radius=bh//2, fill=color)
+        bbox = draw.textbbox((0,0), days, font=f_tiny)
+        tw = bbox[2]-bbox[0]
+        draw.text((bx+(bw-tw)//2, by_+int(bh*0.2)), days, fill=WHITE, font=f_tiny)
+    nav_y = sy+sh-int(sh*0.07)
+    draw.rectangle([sx, nav_y, sx+sw, sy+sh], fill=(255,255,255,240))
+    for i, ic in enumerate([VIOLET,(190,190,200),(190,190,200),(190,190,200)]):
+        nx = sx+sw//8+i*(sw//4); ny = nav_y+int(sh*0.025); nr = int(sw*0.025)
+        draw.ellipse([nx-nr, ny-nr, nx+nr, ny+nr], fill=ic)
+
+def screen_countdown(draw, sx, sy, sw, sh):
+    """SS2 – Big countdown card (Interest: key feature)."""
+    _, f_title, f_body, f_small, f_tiny = get_fonts(sh)
+    try:
+        f_huge = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", int(sh*0.13))
+        f_hero = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", int(sh*0.045))
+    except:
+        f_huge = f_hero = ImageFont.load_default()
+    bar_h = int(sh*0.07)
+    draw.text((sx+int(sw*0.05), sy+bar_h), "< Tillbaka", fill=VIOLET, font=f_tiny)
+    av_r = int(sw*0.14); av_cx = sx+sw//2; av_cy = sy+bar_h+int(sh*0.12)
+    draw.ellipse([av_cx-av_r, av_cy-av_r, av_cx+av_r, av_cy+av_r], fill=CORAL)
+    draw.text((av_cx-int(av_r*0.45), av_cy-int(av_r*0.55)), "M", fill=WHITE, font=f_hero)
+    centered_text(draw, "Mamma", av_cy+av_r+int(sh*0.02), sw+sx*2, f_hero, DARK)
+    centered_text(draw, "Fyller 60 ar - 21 februari", av_cy+av_r+int(sh*0.065), sw+sx*2, f_small, GREY)
+    card_y = av_cy+av_r+int(sh*0.12)
+    cm = int(sw*0.06); cw = sw-cm*2; ch = int(sh*0.22); cr = int(sw*0.06)
+    for row in range(ch):
+        t = row/ch
+        c = lerp_color(CORAL, PEACH, t)
+        draw.rectangle([sx+cm, card_y+row, sx+cm+cw, card_y+row+1], fill=c)
+    centered_text(draw, "3", card_y+int(ch*0.05), sw+sx*2, f_huge, WHITE)
+    centered_text(draw, "DAGAR KVAR", card_y+int(ch*0.62), sw+sx*2, f_small, (255,255,255,200))
+    centered_text(draw, "21 februari", card_y+int(ch*0.80), sw+sx*2, f_tiny, (255,255,255,180))
+    btn_y = card_y+ch+int(sh*0.04); bh = int(sh*0.065); bm = int(sw*0.06); bw = sw-bm*2
+    draw.rounded_rectangle([sx+bm, btn_y, sx+bm+bw, btn_y+bh], radius=bh//2, fill=VIOLET)
+    centered_text(draw, "Skicka halsning", btn_y+int(bh*0.25), sw+sx*2, f_small, WHITE)
+    btn2_y = btn_y+bh+int(sh*0.02)
+    draw.rounded_rectangle([sx+bm, btn2_y, sx+bm+bw, btn2_y+bh], radius=bh//2, fill=(240,238,255))
+    centered_text(draw, "Swisha present", btn2_y+int(bh*0.25), sw+sx*2, f_small, VIOLET)
+
+def screen_reminders(draw, sx, sy, sw, sh):
+    """SS3 – Reminder toggles (Desire: never miss)."""
+    _, f_title, f_body, f_small, f_tiny = get_fonts(sh)
+    bar_h = int(sh*0.07)
+    draw.text((sx+int(sw*0.06), sy+bar_h), "Paminnelser", fill=DARK, font=f_title)
+    draw.text((sx+int(sw*0.06), sy+bar_h+int(sh*0.055)), "Valj nar du vill bli pamind", fill=GREY, font=f_tiny)
+    reminders = [
+        ("Samma dag",     True,  CORAL),
+        ("1 dag innan",   True,  VIOLET),
+        ("1 vecka innan", True,  MINT2),
+        ("2 veckor",      False, GREY),
+        ("1 manad",       False, GREY),
+    ]
+    cm=int(sw*0.05); cw=sw-cm*2; ch=int(sh*0.085); gap=int(sh*0.012); cr=int(sw*0.04)
+    card_y = sy+bar_h+int(sh*0.12)
+    for i, (label, active, color) in enumerate(reminders):
+        cy = card_y+i*(ch+gap)
+        draw.rounded_rectangle([sx+cm, cy, sx+cm+cw, cy+ch], radius=cr, fill=(255,255,255,230))
+        ic_r=int(ch*0.28); ic_cx=sx+cm+int(cw*0.1); ic_cy=cy+ch//2
+        draw.ellipse([ic_cx-ic_r, ic_cy-ic_r, ic_cx+ic_r, ic_cy+ic_r], fill=(*color,40) if active else (230,230,235))
+        draw.text((sx+cm+int(cw*0.22), cy+int(ch*0.3)), label, fill=DARK if active else GREY, font=f_body)
+        tog_w=int(cw*0.14); tog_h=int(ch*0.38)
+        tog_x=sx+cm+cw-tog_w-int(cw*0.05); tog_y=cy+(ch-tog_h)//2
+        draw.rounded_rectangle([tog_x, tog_y, tog_x+tog_w, tog_y+tog_h], radius=tog_h//2, fill=color if active else (200,200,210))
+        knob_r=int(tog_h*0.42)
+        knob_x=(tog_x+tog_w-knob_r-2) if active else (tog_x+knob_r+2)
+        draw.ellipse([knob_x-knob_r, tog_y+2, knob_x+knob_r, tog_y+tog_h-2], fill=WHITE)
+    info_y = card_y+len(reminders)*(ch+gap)+int(sh*0.03); info_h=int(sh*0.1)
+    draw.rounded_rectangle([sx+cm, info_y, sx+cm+cw, info_y+info_h], radius=cr, fill=(*VIOLET,15))
+    draw.text((sx+cm+int(cw*0.06), info_y+int(info_h*0.15)), "Aldrig missa en fodelsedag!", fill=VIOLET, font=f_small)
+    draw.text((sx+cm+int(cw*0.06), info_y+int(info_h*0.55)), "Automatiska notiser direkt till din telefon", fill=GREY, font=f_tiny)
+
+def screen_import(draw, sx, sy, sw, sh):
+    """SS4 – Import contacts (Action: easy onboarding)."""
+    _, f_title, f_body, f_small, f_tiny = get_fonts(sh)
+    bar_h = int(sh*0.07)
+    draw.text((sx+int(sw*0.06), sy+bar_h), "Importera kontakter", fill=DARK, font=f_title)
+    draw.text((sx+int(sw*0.06), sy+bar_h+int(sh*0.055)), "Lagg till fran din telefonbok", fill=GREY, font=f_tiny)
+    contacts = [
+        ("Anna Svensson",   "12 mar 1990", CORAL,  True),
+        ("Bjorn Karlsson",  "5 jun 1985",  VIOLET, True),
+        ("Cecilia Holm",    "28 aug 1995", MINT2,  False),
+        ("David Lindberg",  "17 nov 1988", SKY,    True),
+        ("Elsa Magnusson",  "3 jan 1992",  PEACH,  False),
+        ("Filip Johansson", "22 okt 1997", GOLD,   True),
+    ]
+    cm=int(sw*0.05); cw=sw-cm*2; ch=int(sh*0.085); gap=int(sh*0.01); cr=int(sw*0.04)
+    card_y = sy+bar_h+int(sh*0.12)
+    for i, (name, bday, color, selected) in enumerate(contacts):
+        cy = card_y+i*(ch+gap)
+        if cy+ch > sy+sh-int(sh*0.18): break
+        draw.rounded_rectangle([sx+cm, cy, sx+cm+cw, cy+ch], radius=cr, fill=(255,255,255,230))
+        if selected:
+            draw.rounded_rectangle([sx+cm, cy, sx+cm+cw, cy+ch], radius=cr, outline=(*color,120), width=2)
+        av_r=int(ch*0.32); av_cx=sx+cm+int(cw*0.09); av_cy=cy+ch//2
+        draw.ellipse([av_cx-av_r, av_cy-av_r, av_cx+av_r, av_cy+av_r], fill=color)
+        draw.text((av_cx-int(av_r*0.4), av_cy-int(av_r*0.55)), name[0], fill=WHITE, font=f_small)
+        tx = av_cx+av_r+int(cw*0.04)
+        draw.text((tx, cy+int(ch*0.15)), name, fill=DARK, font=f_body)
+        draw.text((tx, cy+int(ch*0.55)), bday, fill=GREY, font=f_tiny)
+        cb_r=int(ch*0.22); cb_cx=sx+cm+cw-int(cw*0.08); cb_cy=cy+ch//2
+        if selected:
+            draw.ellipse([cb_cx-cb_r, cb_cy-cb_r, cb_cx+cb_r, cb_cy+cb_r], fill=color)
+            draw.text((cb_cx-int(cb_r*0.5), cb_cy-int(cb_r*0.6)), "✓", fill=WHITE, font=f_tiny)
+        else:
+            draw.ellipse([cb_cx-cb_r, cb_cy-cb_r, cb_cx+cb_r, cb_cy+cb_r], outline=(200,200,210), width=2)
+    btn_y=sy+sh-int(sh*0.14); bh=int(sh*0.065); bm=int(sw*0.06); bw=sw-bm*2
+    draw.rounded_rectangle([sx+bm, btn_y, sx+bm+bw, btn_y+bh], radius=bh//2, fill=VIOLET)
+    centered_text(draw, "Importera 4 kontakter", btn_y+int(bh*0.25), sw+sx*2, f_small, WHITE)
+
+def screen_gifts(draw, sx, sy, sw, sh):
+    """SS5 – Gift suggestions grid."""
+    _, f_title, f_body, f_small, f_tiny = get_fonts(sh)
+    bar_h = int(sh*0.07)
+    draw.text((sx+int(sw*0.06), sy+bar_h), "Presenttips", fill=DARK, font=f_title)
+    draw.text((sx+int(sw*0.06), sy+bar_h+int(sh*0.055)), "Emma - Fyller 30 ar - 7 dagar kvar", fill=GREY, font=f_tiny)
+    cm=int(sw*0.04); cw2=(sw-cm*3)//2; ch2=int(sh*0.2); cr=int(sw*0.05)
+    gifts = [
+        ("Smycken",      "fran 299 kr", CORAL,  "Amazon"),
+        ("Bocker",       "fran 149 kr", VIOLET, "Adlibris"),
+        ("Hudvard",      "fran 249 kr", MINT2,  "Lyko"),
+        ("Upplevelse",   "fran 499 kr", GOLD,   "Coolstuff"),
+    ]
+    gy = sy+bar_h+int(sh*0.12)
+    for i, (name, price, color, shop) in enumerate(gifts):
+        row, col = divmod(i, 2)
+        gx = sx+cm+col*(cw2+cm); cy = gy+row*(ch2+int(sh*0.02))
+        draw.rounded_rectangle([gx, cy, gx+cw2, cy+ch2], radius=cr, fill=(255,255,255,230))
+        block_h = int(ch2*0.5)
+        for rp in range(block_h):
+            c = lerp_color(color, lerp_color(color, WHITE, 0.5), rp/block_h)
+            draw.rectangle([gx+2, cy+rp, gx+cw2-2, cy+rp+1], fill=c)
+        draw.text((gx+int(cw2*0.08), cy+int(ch2*0.55)), name, fill=DARK, font=f_small)
+        draw.text((gx+int(cw2*0.08), cy+int(ch2*0.73)), price, fill=color, font=f_tiny)
+        draw.text((gx+int(cw2*0.08), cy+int(ch2*0.87)), shop, fill=GREY, font=f_tiny)
+    btn_y=sy+sh-int(sh*0.14); bh=int(sh*0.065); bm=int(sw*0.06); bw=sw-bm*2
+    draw.rounded_rectangle([sx+bm, btn_y, sx+bm+bw, btn_y+bh], radius=bh//2, fill=MINT2)
+    centered_text(draw, "Swisha Emma", btn_y+int(bh*0.25), sw+sx*2, f_small, WHITE)
+
+def screen_relation_tree(draw, sx, sy, sw, sh):
+    """SS6 – Relation tree."""
+    _, f_title, f_body, f_small, f_tiny = get_fonts(sh)
+    bar_h = int(sh*0.07)
+    draw.text((sx+int(sw*0.06), sy+bar_h), "Relationskarta", fill=DARK, font=f_title)
+    draw.text((sx+int(sw*0.06), sy+bar_h+int(sh*0.055)), "Visualisera dina relationer", fill=GREY, font=f_tiny)
+    node_r = int(sw*0.09)
+    cx = sx+sw//2; owner_y = sy+bar_h+int(sh*0.15)
+
+    def draw_node(x, y, initial, color, label, is_owner=False):
+        r = int(node_r*1.2) if is_owner else node_r
+        draw.ellipse([x-r, y-r, x+r, y+r], fill=color)
+        if is_owner:
+            draw.ellipse([x-r, y-r, x+r, y+r], outline=GOLD, width=3)
+        draw.text((x-int(r*0.4), y-int(r*0.55)), initial, fill=WHITE, font=f_body)
+        if label:
+            lbbox = draw.textbbox((0,0), label, font=f_tiny)
+            lw = lbbox[2]-lbbox[0]+16; lh = int(sh*0.025)
+            lx = x-lw//2; ly = y+r+4
+            draw.rounded_rectangle([lx, ly, lx+lw, ly+lh], radius=lh//2, fill=color)
+            draw.text((lx+8, ly+2), label, fill=WHITE, font=f_tiny)
+
+    draw_node(cx, owner_y, "A", VIOLET, "JAG", is_owner=True)
+    p_gap = int(sw*0.32); parent_y = owner_y+int(sh*0.18)
+    parents = [(cx-p_gap, "K", CORAL, "Mamma"), (cx+p_gap, "D", SKY, "Pappa")]
+    for px, init, col, lbl in parents:
+        draw.line([(cx, owner_y+int(node_r*1.2)), (px, parent_y-node_r)], fill=(*col,120), width=3)
+        draw_node(px, parent_y, init, col, lbl)
+    draw.line([(parents[0][0]+node_r, parent_y), (parents[1][0]-node_r, parent_y)], fill=(*CORAL,80), width=2)
+    child_y = parent_y+int(sh*0.18)
+    children = [
+        (cx-int(sw*0.38), "L", MINT2,  "Syster"),
+        (cx-int(sw*0.10), "E", PEACH,  "Bror"),
+        (cx+int(sw*0.16), "S", GOLD,   "Vän"),
+        (cx+int(sw*0.38), "M", VIOLET, "Vän"),
+    ]
+    for chx, init, col, lbl in children:
+        par_x = parents[0][0] if chx < cx else parents[1][0]
+        draw.line([(par_x, parent_y+node_r), (chx, child_y-node_r)], fill=(*col,100), width=2)
+        draw_node(chx, child_y, init, col, lbl)
+
+# ── OLD screen functions kept for reference (unused) ───────
 
 def draw_home_screen(draw, sx, sy, sw, sh):
     """Simulate the home screen with birthday list."""
@@ -374,119 +596,145 @@ def draw_premium_screen(draw, sx, sy, sw, sh):
             draw.text((sx + int(sw * 0.1), py + int(price_h * 0.3)), plan, fill=DARK, font=font_med)
             draw.text((sx + sw - int(sw * 0.3), py + int(price_h * 0.3)), price, fill=VIOLET, font=font_med)
 
-def create_screenshot(width, height, title, subtitle, screen_func, bg_colors, output_path):
-    """Create a full promotional screenshot."""
-    img = Image.new('RGB', (width, height), (0, 0, 0))
+def create_screenshot(width, height, headline, subline, screen_func, bg_c1, bg_c2, bg_c3, output_path):
+    """Create one ASO-optimized promotional screenshot."""
+    img = Image.new('RGB', (width, height))
     draw = ImageDraw.Draw(img, 'RGBA')
-    
+
     # Background gradient
-    draw_gradient_bg(draw, width, height, *bg_colors)
-    
-    # Marketing text at top
+    draw_gradient_bg(draw, width, height, bg_c1, bg_c2, bg_c3)
+
+    # Festive confetti
+    draw_confetti(draw, width, height, seed=hash(output_path) % 9999)
+
+    # ── Marketing text block (top ~14% of image) ──
     try:
-        font_title = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", int(height * 0.032))
-        font_sub = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", int(height * 0.018))
+        f_hero = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", int(height * 0.038))
+        f_sub  = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", int(height * 0.020))
     except:
-        font_title = ImageFont.load_default()
-        font_sub = font_title
-    
-    text_y = int(height * 0.06)
-    
-    # Title
-    bbox = draw.textbbox((0, 0), title, font=font_title)
-    tw = bbox[2] - bbox[0]
-    draw.text(((width - tw) // 2, text_y), title, fill=WHITE, font=font_title)
-    
-    # Subtitle
-    bbox2 = draw.textbbox((0, 0), subtitle, font=font_sub)
-    sw2 = bbox2[2] - bbox2[0]
-    draw.text(((width - sw2) // 2, text_y + int(height * 0.045)), subtitle, fill=(255, 255, 255, 200), font=font_sub)
-    
-    # Phone mockup
-    phone_w = int(width * 0.72)
-    phone_h = int(phone_w * 2.16)  # iPhone aspect ratio
+        f_hero = f_sub = ImageFont.load_default()
+
+    # Clamp headline to fit within image width with padding
+    margin = int(width * 0.05)
+    max_text_w = width - margin * 2
+
+    hbbox = draw.textbbox((0, 0), headline, font=f_hero)
+    hw = hbbox[2] - hbbox[0]
+    # Scale down font if headline too wide
+    f_hero_use = f_hero
+    if hw > max_text_w:
+        try:
+            scaled = int(height * 0.038 * max_text_w / hw)
+            f_hero_use = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", max(scaled, int(height*0.022)))
+        except:
+            pass
+        hbbox = draw.textbbox((0, 0), headline, font=f_hero_use)
+        hw = hbbox[2] - hbbox[0]
+
+    hy_center = int(height * 0.075)
+    pad = int(width * 0.04)
+    pill_x1 = max(0, (width - hw) // 2 - pad)
+    pill_x2 = min(width, (width + hw) // 2 + pad)
+    pill_y1 = hy_center - int(height * 0.025)
+    pill_y2 = hy_center + int(height * 0.038)
+    draw.rounded_rectangle([pill_x1, pill_y1, pill_x2, pill_y2],
+                            radius=(pill_y2 - pill_y1) // 2,
+                            fill=(0, 0, 0, 60))
+    draw.text(((width - hw) // 2, hy_center), headline, fill=WHITE, font=f_hero_use)
+
+    # Subline
+    sbbox = draw.textbbox((0, 0), subline, font=f_sub)
+    sw2 = sbbox[2] - sbbox[0]
+    draw.text(((width - sw2) // 2, hy_center + int(height * 0.052)),
+              subline, fill=(255, 255, 255, 210), font=f_sub)
+
+    # ── Phone mockup (centered, fills ~78% of width) ──
+    phone_w = int(width * 0.76)
+    phone_h = int(phone_w * 2.16)
     phone_x = (width - phone_w) // 2
-    phone_y = int(height * 0.16)
-    
-    # Ensure phone doesn't go too far below
-    max_phone_h = height - phone_y + int(height * 0.05)
-    if phone_h > max_phone_h:
-        phone_h = max_phone_h
-    
+    phone_y = int(height * 0.155)
+    max_ph = int(height * 0.82)
+    if phone_h > max_ph:
+        phone_h = max_ph
+
     draw_phone_frame(img, phone_x, phone_y, phone_w, phone_h, screen_func)
-    
-    img.save(output_path, 'PNG', quality=95)
-    print(f"  ✓ {width}x{height} → {os.path.basename(output_path)}")
+
+    img.save(output_path, 'PNG')
+    print(f"  ✓ {width}×{height}  {os.path.basename(output_path)}")
+
 
 def main():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ss_dir = os.path.join(base_dir, 'assets', 'screenshots')
     os.makedirs(ss_dir, exist_ok=True)
-    
-    # Screenshot definitions
+
+    # ── 6 screenshots in AIDA order ────────────────────────
+    # (headline, subline, screen_func, bg_c1, bg_c2, bg_c3, filename)
     screens = [
-        {
-            'title': 'Alla födelsedagar\npå ett ställe',
-            'subtitle': 'Smarta påminnelser så du aldrig glömmer',
-            'func': draw_home_screen,
-            'bg': (VIOLET, SKY, MINT),
-            'name': '01_home',
-        },
-        {
-            'title': 'Kalendervy',
-            'subtitle': 'Se alla födelsedagar i månadsöversikt',
-            'func': draw_calendar_screen,
-            'bg': (SKY, MINT),
-            'name': '02_calendar',
-        },
-        {
-            'title': 'Smarta presenttips',
-            'subtitle': 'Åldersbaserade förslag via Amazon & Coolstuff',
-            'func': draw_gift_screen,
-            'bg': (CORAL, PEACH),
-            'name': '03_gifts',
-        },
-        {
-            'title': 'Birthday Premium',
-            'subtitle': 'Obegränsat, reklamfritt och mer',
-            'func': draw_premium_screen,
-            'bg': (VIOLET, CORAL),
-            'name': '04_premium',
-        },
+        (
+            "Aldrig missa en födelsedag!",
+            "Automatiska påminnelser · Alltid i tid",
+            screen_home,
+            VIOLET, SKY, MINT,
+            "01_home",
+        ),
+        (
+            "3 dagar kvar till Mammas dag",
+            "Nedräkning i realtid för varje person",
+            screen_countdown,
+            CORAL, PEACH, (255, 220, 180),
+            "02_countdown",
+        ),
+        (
+            "Påminnelser som passar dig",
+            "Välj 1 dag, 1 vecka eller 1 månad innan",
+            screen_reminders,
+            VIOLET2, VIOLET, SKY,
+            "03_reminders",
+        ),
+        (
+            "Importera kontakter på sekunder",
+            "Hämta namn & datum direkt från telefonboken",
+            screen_import,
+            MINT2, SKY, VIOLET,
+            "04_import",
+        ),
+        (
+            "Smarta presenttips & Swish",
+            "Åldersbaserade förslag – Swisha direkt i appen",
+            screen_gifts,
+            CORAL, PEACH, GOLD,
+            "05_gifts",
+        ),
+        (
+            "Visualisera dina relationer",
+            "Bygg ett familjeträd med ett tryck",
+            screen_relation_tree,
+            VIOLET, MINT2, SKY,
+            "06_relations",
+        ),
     ]
-    
-    # App Store sizes
+
+    # ── App Store required sizes ────────────────────────────
     sizes = {
-        'iphone_67': (1290, 2796),   # iPhone 6.7" (required)
+        'iphone_67': (1290, 2796),   # iPhone 6.7" – REQUIRED
         'iphone_65': (1284, 2778),   # iPhone 6.5"
-        'iphone_55': (1242, 2208),   # iPhone 5.5"
-        'ipad_13': (2064, 2752),     # iPad 13" (required)
+        'ipad_13':   (2064, 2752),   # iPad 13"    – REQUIRED
     }
-    
-    print("📸 Generating App Store Screenshots\n")
-    
+
+    print("📸 Generating ASO-optimized App Store Screenshots\n")
+
     for size_name, (w, h) in sizes.items():
-        print(f"\n📱 {size_name} ({w}x{h}):")
+        print(f"\n📱 {size_name} ({w}×{h}):")
         size_dir = os.path.join(ss_dir, size_name)
         os.makedirs(size_dir, exist_ok=True)
-        
-        for screen in screens:
-            bg = screen['bg']
-            if len(bg) == 2:
-                bg = (bg[0], bg[1])
-            
-            output = os.path.join(size_dir, f"{screen['name']}.png")
-            create_screenshot(
-                w, h,
-                screen['title'],
-                screen['subtitle'],
-                screen['func'],
-                bg,
-                output
-            )
-    
-    print(f"\n✅ All screenshots generated in: {ss_dir}")
-    print("   Upload these to App Store Connect under 'App Preview and Screenshots'")
+
+        for headline, subline, func, c1, c2, c3, name in screens:
+            out = os.path.join(size_dir, f"{name}.png")
+            create_screenshot(w, h, headline, subline, func, c1, c2, c3, out)
+
+    print(f"\n✅ Done! {len(screens) * len(sizes)} screenshots in: {ss_dir}")
+    print("   Upload to App Store Connect → App Preview and Screenshots")
 
 if __name__ == '__main__':
     main()

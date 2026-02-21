@@ -71,7 +71,7 @@ class ContactService {
       birthdays.add(Birthday(
         id: _uuid.v4(),
         name: contact.displayName,
-        date: birthdayDate ?? DateTime(2000, 1, 1),
+        date: birthdayDate ?? Birthday.noBirthdaySentinel,
         phone: contact.phones.isNotEmpty ? contact.phones.first.number : null,
         email: contact.emails.isNotEmpty ? contact.emails.first.address : null,
         address: address,
@@ -139,7 +139,7 @@ class ContactService {
     return Birthday(
       id: _uuid.v4(),
       name: contact.displayName,
-      date: contact.birthday ?? DateTime(2000, 1, 1),
+      date: contact.birthday ?? Birthday.noBirthdaySentinel,
       phone: contact.phone,
       email: contact.email,
       address: contact.address,

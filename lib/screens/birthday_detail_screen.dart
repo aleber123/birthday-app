@@ -19,18 +19,33 @@ import '../widgets/vipps_button.dart';
 import '../widgets/wishlist_widget.dart';
 import 'add_birthday_screen.dart';
 import 'paywall_screen.dart';
+import '../services/facebook_analytics_service.dart';
 
-class BirthdayDetailScreen extends StatelessWidget {
+class BirthdayDetailScreen extends StatefulWidget {
   final String birthdayId;
 
   const BirthdayDetailScreen({super.key, required this.birthdayId});
+
+  @override
+  State<BirthdayDetailScreen> createState() => _BirthdayDetailScreenState();
+}
+
+class _BirthdayDetailScreenState extends State<BirthdayDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+    FacebookAnalyticsService.instance.logViewContent(
+      contentType: 'birthday_detail',
+      contentId: widget.birthdayId,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<BirthdayProvider>(
       builder: (context, provider, _) {
         final birthday = provider.allBirthdays
-            .where((b) => b.id == birthdayId)
+            .where((b) => b.id == widget.birthdayId)
             .firstOrNull;
 
         if (birthday == null) {
@@ -251,6 +266,40 @@ class BirthdayDetailScreen extends StatelessWidget {
   }
 
   Widget _buildCountdownCard(BuildContext context, Birthday birthday, Color color) {
+    if (!birthday.hasBirthday) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 40, color: Colors.orange.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'Födelsedag saknas',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange.shade700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tryck på redigera för att lägga till ett datum.',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => AddBirthdayScreen(editBirthday: birthday)),
+                ),
+                icon: const Icon(Icons.edit_calendar_outlined),
+                label: const Text('Lägg till födelsedag'),
+                style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade400),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final days = birthday.daysUntilBirthday;
     final isToday = birthday.isBirthdayToday;
 
@@ -315,13 +364,16 @@ class BirthdayDetailScreen extends StatelessWidget {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            _infoRow(Icons.cake_outlined, AppLocalizations.of(context).birthdate,
-                DateFormat.yMMMMd(AppLocalizations.of(context).locale.languageCode).format(birthday.date)),
-            _infoRow(Icons.elderly, AppLocalizations.of(context).age, '${birthday.age} ${AppLocalizations.of(context).yearsOld}'),
-            _infoRow(Icons.calendar_today_outlined, AppLocalizations.of(context).nextBirthday,
-                AppLocalizations.of(context).get(birthday.weekdayKey)),
+            if (birthday.hasBirthday) ...[  
+              _infoRow(Icons.cake_outlined, AppLocalizations.of(context).birthdate,
+                  DateFormat.yMMMMd(AppLocalizations.of(context).locale.languageCode).format(birthday.date)),
+              _infoRow(Icons.elderly, AppLocalizations.of(context).age, '${birthday.age} ${AppLocalizations.of(context).yearsOld}'),
+              _infoRow(Icons.calendar_today_outlined, AppLocalizations.of(context).nextBirthday,
+                  AppLocalizations.of(context).get(birthday.weekdayKey)),
+              _infoRow(Icons.auto_awesome, AppLocalizations.of(context).zodiacSign, AppLocalizations.of(context).get(birthday.zodiacKey)),
+            ] else
+              _infoRow(Icons.cake_outlined, AppLocalizations.of(context).birthdate, 'Saknas'),
             _infoRow(Icons.favorite_outlined, 'Relation', '${birthday.relationTypeEmoji} ${AppLocalizations.of(context).get(birthday.relationTypeLabelKey)}'),
-            _infoRow(Icons.auto_awesome, AppLocalizations.of(context).zodiacSign, AppLocalizations.of(context).get(birthday.zodiacKey)),
             if (birthday.phone != null)
               _infoRow(Icons.phone_outlined, AppLocalizations.of(context).phone, birthday.phone!),
             if (birthday.email != null)
@@ -426,39 +478,100 @@ class BirthdayDetailScreen extends StatelessWidget {
   }
 
   Widget _buildActions(BuildContext context, BirthdayProvider provider, Birthday birthday) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
+        // CSV share button
+        SizedBox(
+          width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AddBirthdayScreen(editBirthday: birthday),
-                ),
-              );
-            },
-            icon: const Icon(Icons.edit_outlined),
-            label: Text(AppLocalizations.of(context).edit),
+            onPressed: () => _shareAsCsv(context, birthday),
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('Dela som CSV'),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: () => _confirmDelete(context, provider, birthday),
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
-            label: Text(AppLocalizations.of(context).delete, style: const TextStyle(color: Colors.red)),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              side: const BorderSide(color: Colors.red),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AddBirthdayScreen(editBirthday: birthday),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.edit_outlined),
+                label: Text(AppLocalizations.of(context).edit),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _confirmDelete(context, provider, birthday),
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                label: Text(AppLocalizations.of(context).delete, style: const TextStyle(color: Colors.red)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Colors.red),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
+  }
+
+  Future<void> _shareAsCsv(BuildContext context, Birthday birthday) async {
+    final l = AppLocalizations.of(context);
+    String csvEscape(String? s) {
+      if (s == null || s.isEmpty) return '';
+      if (s.contains(',') || s.contains('"') || s.contains('\n')) {
+        return '"${s.replaceAll('"', '""')}"';
+      }
+      return s;
+    }
+
+    final csvBuffer = StringBuffer();
+    csvBuffer.writeln('Namn,F\u00f6delsedatum,\u00c5lder,Telefon,E-post,Adress,Relation,Anteckningar');
+    final date = DateFormat('yyyy-MM-dd').format(birthday.date);
+    csvBuffer.writeln(
+      '${csvEscape(birthday.name)},$date,${birthday.age},'
+      '${csvEscape(birthday.phone)},${csvEscape(birthday.email)},'
+      '${csvEscape(birthday.address)},${csvEscape(l.get(birthday.relationTypeLabelKey))},'
+      '${csvEscape(birthday.notes)}',
+    );
+
+    final size = MediaQuery.of(context).size;
+    try {
+      final dir = await getTemporaryDirectory();
+      final safeName = birthday.name.replaceAll(RegExp(r'[^\w\u00e5\u00e4\u00f6\u00c5\u00c4\u00d6]'), '_');
+      final file = File('${dir.path}/$safeName.csv');
+      await file.writeAsString(csvBuffer.toString());
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: '${birthday.name} \u2013 F\u00f6delsedag',
+        sharePositionOrigin: Rect.fromLTWH(
+          size.width / 2 - 50,
+          size.height / 2 - 50,
+          100,
+          100,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kunde inte dela: $e')),
+      );
+    }
   }
 
   Widget _infoRow(IconData icon, String label, String value) {

@@ -111,6 +111,10 @@ class Birthday {
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
+  static final DateTime noBirthdaySentinel = DateTime(1900, 1, 1);
+
+  bool get hasBirthday => date != noBirthdaySentinel;
+
   int get age {
     final now = DateTime.now();
     int age = now.year - date.year;
@@ -171,6 +175,7 @@ class Birthday {
   }
 
   int get daysUntilBirthday {
+    if (!hasBirthday) return 999999;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     DateTime nextBirthday = DateTime(now.year, date.month, date.day);
@@ -185,6 +190,7 @@ class Birthday {
   }
 
   bool get isBirthdayToday {
+    if (!hasBirthday) return false;
     final now = DateTime.now();
     return now.month == date.month && now.day == date.day;
   }
